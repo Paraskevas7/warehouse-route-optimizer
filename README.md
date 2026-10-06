@@ -6,6 +6,8 @@ A picker has to collect 30 items from a warehouse and return to the start. **In 
 This is a travelling-salesman problem on a warehouse floor, and this project solves it with several algorithms and
 compares them honestly against the exact optimum.
 
+**[Try it in your browser (works on phones)](https://paraskevas7.github.io/warehouse-route-optimizer/)**
+
 ![Four routes for the same order](docs/figures/routes.png)
 
 ![Genetic algorithm improving a route](docs/figures/ga.gif)
@@ -21,6 +23,7 @@ compares them honestly against the exact optimum.
 | Genetic algorithm | `algorithms.py` | Tournament selection, order crossover (OX), swap/reverse mutation, elitism; optional 2-opt "memetic" step |
 | Exact solver | `algorithms.py` | **Held-Karp** dynamic programming over subsets (up to 15 picks) |
 | Experiments & plots | `experiments.py`, `viz.py` | Average cost, run time and gap to optimum; route pictures and a GIF |
+| Interactive demo | `docs/index.html`, `docs/routing.js` | The same algorithms in JavaScript; tap an algorithm to see its route |
 
 ## Results
 
@@ -48,7 +51,8 @@ What I learned:
 
 ```bash
 pip install -r requirements.txt
-python -m unittest discover -s tests          # 18 tests
+python -m unittest discover -s tests          # 18 Python tests
+node --test test/parity.test.js               # JavaScript port gives the same answers as Python
 python -m warehouse_routing solve --picks 30 --algorithm nearest+2opt --plot route.png
 python -m warehouse_routing compare --picks 10 --trials 20 --optimal
 python -m warehouse_routing animate --out ga.gif
@@ -59,6 +63,7 @@ python make_figures.py                          # rebuilds figures and results
 - Distances come from real shortest paths on the grid, so the model can later get one-way aisles or blocked cells.
 - Every algorithm returns a permutation of `1..n`; tests check this, check that local search never makes a route worse,
   and check Held-Karp against brute force over all permutations.
+- `tools/make_fixture.py` records Python's answers; `test/parity.test.js` checks the JavaScript port against them.
 - Runs are seeded, so results are reproducible.
 
 ## Ideas to extend

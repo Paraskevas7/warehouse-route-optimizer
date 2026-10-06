@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Warehouse Route Optimizer</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --fg:#1b2430; --muted:#5d6b7c; --line:#d9dfe6; --accent:#1d6fb8; --route:#d1495b; --shelf:#59616b; --floor:#fff; --good:#2a9d4a; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#12171d; --card:#1b222b; --fg:#e8edf3; --muted:#9aa8b8; --line:#2c3743; --accent:#5aa9ee; --route:#ff6f83; --shelf:#46505b; --floor:#0e1318; --good:#52c26f; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  main { max-width:760px; margin:0 auto; display:flex; flex-direction:column; gap:14px; }
+  h1 { font-size:1.35rem; margin:0; } p { margin:0; color:var(--muted); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px; }
+  .controls { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; }
+  label { display:flex; flex-direction:column; gap:4px; font-size:.85rem; color:var(--muted); }
+  label b { color:var(--fg); font-weight:600; }
+  input[type=range] { width:100%; }
+  .btns { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+  button { font:inherit; padding:9px 14px; border-radius:9px; border:1px solid var(--line); background:var(--card); color:var(--fg); cursor:pointer; }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  canvas { width:100%; display:block; border-radius:8px; background:var(--floor); }
+  table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
+  th,td { text-align:left; padding:8px 6px; border-bottom:1px solid var(--line); }
+  th { font-size:.78rem; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+  tr.sel td { background:color-mix(in srgb, var(--accent) 14%, transparent); }
+  tr.row { cursor:pointer; } td.num { text-align:right; }
+  .bar { height:6px; border-radius:3px; background:var(--accent); min-width:2px; }
+  .legend { display:flex; gap:14px; flex-wrap:wrap; font-size:.8rem; color:var(--muted); }
+  .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:5px; vertical-align:middle; }
+  footer { font-size:.8rem; color:var(--muted); }
+  a { color:var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <div>
+    <h1>Warehouse Route Optimizer</h1>
+    <p>A picker must collect every blue item and return to the green start. Which order is shortest? Tap an algorithm to see its route.</p>
+  </div>
+
+  <section class="card">
+    <div class="controls">
+      <label>Aisles: <b id="vA">8</b><input id="aisles" type="range" min="3" max="12" value="8"></label>
+      <label>Shelf rows: <b id="vR">20</b><input id="rows" type="range" min="5" max="30" value="20"></label>
+      <label>Items to pick: <b id="vP">30</b><input id="picks" type="range" min="3" max="60" value="30"></label>
+    </div>
+    <div class="btns">
+      <button class="primary" id="newBtn">New random order</button>
+      <button id="gaBtn">Watch the genetic algorithm evolve</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <canvas id="cv"></canvas>
+    <div class="legend" style="margin-top:8px">
+      <span><span class="dot" style="background:var(--accent)"></span>item to pick</span>
+      <span><span class="dot" style="background:var(--good)"></span>start / finish</span>
+      <span><span class="dot" style="background:var(--route)"></span>walking route</span>
+    </div>
+  </section>
+
+  <section class="card">
+    <table>
+      <thead><tr><th>Algorithm</th><th class="num">Steps</th><th style="width:30%"></th></tr></thead>
+      <tbody id="tb"></tbody>
+    </table>
+    <p id="note" style="margin-top:8px;font-size:.85rem"></p>
+  </section>
+
+  <footer>Same algorithms as the <a href="https://github.com/Paraskevas7/warehouse-route-optimizer">Python project</a>, ported to JavaScript and tested to give identical answers. Fewer steps is better.</footer>
+</main>
+<script src="routing.js"></script>
+<script>
+(function () {
+  var R = Routing, $ = function (id) { return document.getElementById(id); };
+  var cv = $('cv'), ctx = cv.getContext('2d');
+  var wh, picks, d, results, selected = 'Nearest + 2-opt/or-opt', anim = 0, seed = 1;
+
+  function css(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+
+  function build() {
+    cancelAnimationFrame(anim);
+    var a = +$('aisles').value, r = +$('rows').value, p = Math.min(+$('picks').value, 2 * (a - 1) * r);
+    $('vA').textContent = a; $('vR').textContent = r; $('vP').textContent = p;
+    wh = new R.Warehouse(a, r);
+    picks = R.randomOrder(wh, p, R.mulberry32(seed));
+    d = R.distanceMatrix(wh, picks);
+    var nn = R.nearestNeighbour(d), ss = R.sShape(picks);
+    var ga = R.geneticAlgorithm(d, { population: 80, generations: 200, seed: seed, seeds: [nn, ss] });
+    results = [
+      { name: 'Random order', route: R.randomRoute(picks.length, R.mulberry32(seed + 99)) },
+      { name: 'Nearest neighbour', route: nn },
+      { name: 'S-shape (classic rule)', route: ss },
+      { name: 'Nearest + 2-opt/or-opt', route: R.localSearch(d, nn) },
+      { name: 'Genetic algorithm', route: ga.route, history: ga.history }
+    ];
+    if (picks.length <= 12) { var hk = R.heldKarp(d); results.push({ name: 'Optimal (exact)', route: hk.route }); }
+    results.forEach(function (x) { x.cost = R.routeCost(d, x.route); });
+    if (!results.some(function (x) { return x.name === selected; })) selected = results[3].name;
+    table(); draw(current().route);
+  }
+
+  function current() { return results.filter(function (x) { return x.name === selected; })[0]; }
+
+  function table() {
+    var max = Math.max.apply(null, results.map(function (x) { return x.cost; })), min = Math.min.apply(null, results.map(function (x) { return x.cost; }));
+    $('tb').innerHTML = '';
+    results.forEach(function (x) {
+      var tr = document.createElement('tr'); tr.className = 'row' + (x.name === selected ? ' sel' : '');
+      tr.innerHTML = '<td>' + x.name + '</td><td class="num"><b>' + x.cost + '</b></td><td><div class="bar" style="width:' + Math.max(4, x.cost / max * 100) + '%"></div></td>';
+      tr.onclick = function () { selected = x.name; table(); animate(x.route); };
+      $('tb').appendChild(tr);
+    });
+    var best = results.filter(function (x) { return x.cost === min; })[0], rnd = results[0].cost;
+    $('note').textContent = 'Best: ' + best.name + ' with ' + min + ' steps, ' + Math.round((1 - min / rnd) * 100) + '% shorter than a random order.';
+  }
+
+  function size() {
+    var w = cv.parentElement.clientWidth - 24, cell = Math.max(3, Math.floor(w / wh.cols));
+    var dpr = window.devicePixelRatio || 1;
+    cv.style.width = cell * wh.cols + 'px'; cv.style.height = cell * wh.rows + 'px';
+    cv.width = cell * wh.cols * dpr; cv.height = cell * wh.rows * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return cell;
+  }
+
+  function pathPoints(route) {
+    var cells = [wh.depot].concat(route.map(function (i) { return picks[i - 1].access; }), [wh.depot]), pts = [];
+    for (var i = 0; i + 1 < cells.length; i++) { var p = wh.path(cells[i], cells[i + 1]); pts = pts.concat(pts.length ? p.slice(1) : p); }
+    return pts;
+  }
+
+  function draw(route, upto) {
+    var cell = size(), pts = pathPoints(route);
+    ctx.fillStyle = css('--floor'); ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.fillStyle = css('--shelf');
+    for (var r = 0; r < wh.rows; r++) for (var c = 0; c < wh.cols; c++) if (!wh.grid[r][c]) ctx.fillRect(c * cell, r * cell, cell, cell);
+    var n = upto === undefined ? pts.length : upto;
+    ctx.strokeStyle = css('--route'); ctx.lineWidth = Math.max(1.5, cell / 4); ctx.lineJoin = 'round'; ctx.beginPath();
+    for (var i = 0; i < Math.min(n, pts.length); i++) { var x = (pts[i][1] + .5) * cell, y = (pts[i][0] + .5) * cell; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+    ctx.stroke();
+    ctx.fillStyle = css('--accent');
+    picks.forEach(function (p) { ctx.beginPath(); ctx.arc((p.cell[1] + .5) * cell, (p.cell[0] + .5) * cell, Math.max(2.5, cell * .42), 0, 7); ctx.fill(); });
+    ctx.fillStyle = css('--good'); var s = Math.max(6, cell * .9);
+    ctx.fillRect((wh.depot[1] + .5) * cell - s / 2, (wh.depot[0] + .5) * cell - s / 2, s, s);
+  }
+
+  function animate(route) {
+    cancelAnimationFrame(anim);
+    var total = pathPoints(route).length, k = 0, step = Math.max(1, Math.round(total / 90));
+    (function f() { k += step; draw(route, k); if (k < total) anim = requestAnimationFrame(f); })();
+  }
+
+  function watchGA() {
+    cancelAnimationFrame(anim);
+    var ga = results.filter(function (x) { return x.history; })[0], h = ga.history, i = 0;
+    selected = ga.name; table();
+    (function f() {
+      var item = h[i]; draw(item.route);
+      ctx.fillStyle = css('--fg'); ctx.font = '600 13px system-ui'; ctx.fillText('generation ' + item.gen + ' - ' + item.cost + ' steps', 6, 16);
+      i += 2; if (i < h.length) anim = requestAnimationFrame(f); else draw(ga.route);
+    })();
+  }
+
+  ['aisles', 'rows', 'picks'].forEach(function (id) { $(id).oninput = build; });
+  $('newBtn').onclick = function () { seed++; build(); animate(current().route); };
+  $('gaBtn').onclick = watchGA;
+  window.addEventListener('resize', function () { draw(current().route); });
+  build(); animate(current().route);
+})();
+</script>
+</body>
+</html>
